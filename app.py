@@ -156,17 +156,74 @@ def build_grid(funds, histories, errors):
 
 
 def main():
-    st.set_page_config(page_title="Fund / Index Monitor", page_icon="📊", layout="wide")
+    st.set_page_config(page_title="Fund Performance | Destiny Benefits", page_icon="📈", layout="wide")
     st.markdown("""<style>
-    .stApp {background:#F5F7FB;color:#172B4D}
-    [data-testid="stSidebar"] {background:#E9EEF6}
-    h1,h2,h3 {color:#1B365D !important}
-    [data-testid="stMetric"] {background:white;border:1px solid #DCE3ED;
-      border-top:4px solid #1B365D;border-radius:12px;padding:18px}
-    .stButton>button {background:#1B365D;color:white;border-radius:8px}
+    :root { --destiny-navy:#1B365D; --destiny-blue:#2563AB;
+      --destiny-ink:#243750; --destiny-line:#DDE5EE; }
+    .stApp { background:#F7F8FA; color:var(--destiny-ink); }
+    [data-testid="stAppViewBlockContainer"] { padding-top:2rem; padding-bottom:2rem; }
+    [data-testid="stHeader"] { background:#F7F8FA; }
+    h1,h2,h3 { color:var(--destiny-navy); letter-spacing:-.025em; }
+    [data-testid="stSidebar"] { background:#EDF2F8; border-right:1px solid #DDE5EE; }
+    [data-testid="stSidebar"] h2 { font-size:1.25rem; }
+    .destiny-sidebar { padding:8px 0 22px; margin-bottom:18px;
+      border-bottom:1px solid #CFDBE9; }
+    .destiny-sidebar p { margin:0; font-size:.7rem; letter-spacing:.15em;
+      color:#2563AB; font-weight:700; }
+    .destiny-sidebar strong { display:block; margin-top:7px;
+      color:#1B365D; font-size:1.15rem; letter-spacing:-.02em; }
+    .destiny-hero { position:relative; overflow:hidden; background:#1B365D;
+      border-radius:18px; padding:34px 38px; margin:0 0 24px; color:white;
+      border:1px solid #294971; box-shadow:0 8px 28px #1B365D12; }
+    .destiny-hero:after { content:""; position:absolute; right:-70px; top:-130px;
+      width:370px; height:370px; border:52px solid #345984;
+      border-radius:50%; opacity:.35; pointer-events:none; }
+    .destiny-hero .eyebrow { position:relative; z-index:1; color:#D7E7FA;
+      font-size:.7rem; font-weight:700; letter-spacing:.17em; margin:0 0 12px; }
+    .destiny-hero h1 { position:relative; z-index:1; color:#FFFFFF !important;
+      font-size:clamp(1.8rem,4vw,2.7rem); font-weight:650; line-height:1.15;
+      letter-spacing:-.035em; padding:0; margin:0 0 12px; }
+    .destiny-hero .intro { position:relative; z-index:1; color:#E0E9F5;
+      max-width:680px; font-size:1rem; line-height:1.65; margin:0; }
+    .destiny-hero .hero-note { position:relative; z-index:1; display:inline-block;
+      margin-top:22px; padding-top:14px; border-top:1px solid #597391;
+      color:#C8D9EE; font-size:.75rem; letter-spacing:.035em; }
+    [data-testid="stMetric"] { background:#FFFFFF; border:1px solid #DDE5EE;
+      border-top:3px solid #2563AB; border-radius:14px; padding:20px 22px;
+      min-height:128px; box-shadow:0 3px 12px #1B365D05; }
+    [data-testid="stMetricLabel"] { color:#53667D; font-size:.8rem; }
+    [data-testid="stMetricValue"] { color:#1B365D; font-weight:650; }
+    [data-testid="stDataFrame"] { border:1px solid #DDE5EE;
+      border-radius:12px; overflow:hidden; }
+    [data-testid="stExpander"] { background:#FFFFFF; border:1px solid #DDE5EE;
+      border-radius:12px; }
+    .stButton>button, .stFormSubmitButton>button {
+      background:#1B365D; color:#FFFFFF; border:1px solid #1B365D;
+      border-radius:9px; font-weight:600; min-height:42px; }
+    .stButton>button:hover, .stFormSubmitButton>button:hover {
+      background:#274C79; color:#FFFFFF; border-color:#274C79; }
+    .stButton>button:disabled { background:#E9EEF5; color:#65758A; border-color:#DDE5EE; }
+    .stDownloadButton>button { background:#FFFFFF; color:#1B365D;
+      border:1px solid #BACBE0; border-radius:9px; font-weight:600; }
+    .stDownloadButton>button:hover { background:#EDF3FB; color:#1B365D; border-color:#2563AB; }
+    button:focus-visible, input:focus-visible { outline:3px solid #80ACDF !important;
+      outline-offset:2px; }
+    .destiny-section { margin:26px 0 5px; color:#1B365D;
+      font-size:1.25rem; font-weight:650; letter-spacing:-.02em; }
+    .destiny-footer { margin-top:30px; border-top:1px solid #DDE5EE;
+      padding-top:18px; color:#5A6C83; font-size:.75rem; }
+    @media(max-width:640px) {
+      .destiny-hero { padding:26px 22px; border-radius:12px; }
+      [data-testid="stMetric"] { padding:16px; min-height:110px; }
+    }
     </style>""", unsafe_allow_html=True)
-    st.title("Fund / Index Monitor")
-    st.caption("Active fund oversight · CAD benchmark ETFs · dated total-return comparisons")
+    st.markdown("""<section class="destiny-hero" aria-label="Destiny Benefits fund performance">
+      <p class="eyebrow">DESTINY BENEFITS · RETIREMENT INSIGHTS</p>
+      <h1>A clearer view of fund performance.</h1>
+      <p class="intro">Compare your funds. Understand the difference.
+      Bring clarity to your next investment review.</p>
+      <span class="hero-note">ACTIVE FUNDS &nbsp; / &nbsp; INDEX BENCHMARKS &nbsp; / &nbsp; INFORMED DECISIONS</span>
+    </section>""", unsafe_allow_html=True)
     if "funds" not in st.session_state:
         config = Path(__file__).with_name("funds.json")
         try:
@@ -209,7 +266,8 @@ def main():
         st.info("Applied changes last for this session. Export JSON to keep them; import it next time or add funds.json beside app.py in your private repository. Cloud local files are not durable storage.")
 
     with st.sidebar:
-        st.header("Portfolio filters")
+        st.markdown('<div class="destiny-sidebar"><p>RETIREMENT INSIGHTS</p><strong>Your fund workspace</strong></div>', unsafe_allow_html=True)
+        st.header("Refine your view")
         classes = st.multiselect("Asset Class", sorted({f["asset_class"] for f in st.session_state.funds}))
         statuses = st.multiselect("Strategic Action Status", [HOLD, REPLACE, PENDING])
         search = st.text_input("Search Fund Code", placeholder="e.g. RBF678").strip()
@@ -251,6 +309,7 @@ def main():
             visible = visible[visible["Action"].isin(statuses)]
         if search:
             visible = visible[visible["Fund Code"].str.contains(search, case=False, regex=False)]
+        st.markdown('<div class="destiny-section">Your fund comparison</div>', unsafe_allow_html=True)
         st.caption(f"Showing {len(visible)} of {len(grid)} funds · cards summarize the entire database · alpha in percentage points")
         leading = ["Fund Code", "Fund Name", "Action", "Alpha 3Y (pp)", "Asset Class", "MER (%)", "Benchmark", "Fund As Of", "ETF As Of"]
         visible = visible[leading + [col for col in visible if col not in leading]]
@@ -270,6 +329,7 @@ def main():
             st.markdown("Alpha = stated fund return − ETF return. Fund returns must already be net of MER; ETF prices already reflect fund expenses, so neither MER is subtracted again. HOLD means 3Y alpha > 0; REPLACE means ≤ 0, including ties. ‘Fee Drag’ is the requested screening label, not proof that fees caused the result. The supplied ETF mappings are retained; review whether each benchmark fits the fund mandate, currency and hedging policy.")
             st.caption("Yahoo data can be delayed, revised or rate-limited. Refreshes run only while the app session is active; there is no always-on scheduler. Restrict app access in your hosting settings.")
     dashboard()
+    st.markdown('<div class="destiny-footer">DESTINY BENEFITS &nbsp; · &nbsp; Group retirement for real life.</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
