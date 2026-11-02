@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import gzip
 import re
 from urllib.request import Request, urlopen
 from lxml import html
@@ -11,7 +12,7 @@ CATALOG_URL = 'https://www.blackrock.com/ca/investors/en/products/product-list'
 TICKERS = 'XSP XQQ XVLU XUS XMTM CLU.C XEQT XWD CEW GGRO XDNA XEF CIF XDU'.split()
 ORIGINAL = 'CSP XQQ XULU XUS XMTM CLUC XEQT XWD CEW GGRO XDNA XEF CIF XDU'.split()
 SUGGESTIONS = {'CSP':'XSP', 'XULU':'XVLU', 'CLUC':'CLU.C'}
-SNAPSHOT = Path(__file__).with_name('issuer_snapshot.json')
+SNAPSHOT = Path(__file__).with_name('issuer_snapshot.json.gz')
 
 def download(url):
     with urlopen(Request(url, headers={'User-Agent':'Mozilla/5.0'}), timeout=30) as r:
@@ -113,4 +114,4 @@ def refresh_snapshot(previous):
     return dict(funds=funds, retrieved_at=datetime.now(timezone.utc).isoformat(timespec='seconds')), errors
 
 def load_snapshot():
-    return json.loads(SNAPSHOT.read_text())
+    return json.loads(gzip.decompress(SNAPSHOT.read_bytes()))
