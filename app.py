@@ -6,8 +6,10 @@ from datetime import date
 import pandas as pd
 import altair as alt
 import streamlit as st
-from fund_data import load_snapshot, refresh_snapshot, RETIRED_TICKERS, SUGGESTIONS
+from fund_data import load_snapshot, refresh_snapshot, SUGGESTIONS
 from portfolio import seed, validate, total, costs, exposures, underlying, overlap
+
+RETIRED_TICKERS = {'XEC.U', 'ACWV'}
 
 st.set_page_config(page_title='Casey&Co | Portfolio Studio',page_icon='◒',layout='wide')
 st.markdown('''<style>
@@ -90,6 +92,9 @@ with st.sidebar:
         with st.spinner('Reading issuer publications…'):
             try:
                 snapshot,errors=refresh_snapshot(st.session_state.snapshot)
+                for ticker in RETIRED_TICKERS:
+                    snapshot['funds'].pop(ticker, None)
+                    errors.pop(ticker, None)
                 st.session_state.snapshot=snapshot
                 st.session_state.refresh_errors=errors
                 st.rerun()
