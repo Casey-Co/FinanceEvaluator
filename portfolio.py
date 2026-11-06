@@ -26,9 +26,9 @@ def validate(rows, funds):
 def total(rows):return sum(r['amount'] for r in rows)
 
 def is_security(h):
-    return h['weight']>0 and h['isin'] not in ['','-'] and h['sector'] not in ['Cash and/or Derivatives','Cash','Other'] and not any(x in h['name'].upper() for x in ['ISHARES','ISHRS','ISHS '])
+    return h['weight']>0 and (h['isin'] not in ['','-'] or h.get('asset_class') == 'Equity') and h['sector'] not in ['Cash and/or Derivatives','Cash','Other'] and not any(x in h['name'].upper() for x in ['ISHARES','ISHRS','ISHS '])
 
-def security_key(h):return h['isin'] if h['isin'] not in ['','-'] else h['ticker']+'|'+h['exchange']
+def security_key(h):return h['isin'] if h['isin'] not in ['','-'] else '|'.join([h['ticker'], h['exchange'], h['country']])
 
 def exposures(rows,funds,dimension):
     values=defaultdict(float)
@@ -65,9 +65,9 @@ def underlying(rows,funds):
             record['amount']+=r['amount']*h['weight']/100
             record['via'].add(r['ticker'])
     base=total(rows)
-    records=[{'Security':v['Security'],'ISIN':k,'Sector':v['Sector'],'Country':v['Country'],
+    records=[{'Security':v['Security'],'ISIN':v['ISIN'],'Sector':v['Sector'],'Country':v['Country'],
               'Amount (CAD)':v['amount'],'Portfolio (%)':v['amount']/base*100 if base else 0,
-              'Held through':', '.join(sorted(v['via'])),'Fund count':len(v['via'])} for k,v in result.items()]
+              'Held through':', '.join(sorted(v['via'])),'Fund count':len(v['via'])} for v in result.values()]
     return pd.DataFrame(records,columns=['Security','ISIN','Sector','Country','Amount (CAD)','Portfolio (%)','Held through','Fund count']).sort_values('Amount (CAD)',ascending=False)
 
 def costs(rows,funds):

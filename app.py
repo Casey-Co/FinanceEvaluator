@@ -23,6 +23,9 @@ h1,h2,h3{color:#143c49;letter-spacing:-.035em} h1{font-weight:600}
 [data-testid="stMetricLabel"]{color:#54717a}[data-testid="stMetricValue"]{color:#126b74;font-size:30px}
 [data-testid="stDataFrame"]{border:1px solid #dce7e7;border-radius:12px;overflow:hidden}
 [data-testid="stExpander"]{background:white;border-radius:12px}
+.portfolio-total{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;padding:.75rem;
+  border-top:2px solid #146e79;border-radius:0 0 .5rem .5rem;background:#e9f1f1;color:#153943}
+.portfolio-total strong:nth-child(n+2){text-align:right}
 .insight{background:white;border:1px solid #dce7e7;border-left:4px solid #33939a;border-radius:10px;padding:17px 20px;margin-bottom:12px}.insight b{color:#174c59}.insight p{margin:5px 0 0;color:#526f77;font-size:14px}
 .foot{border-top:1px solid #dce7e7;padding-top:18px;margin-top:30px;color:#637f85;font-size:12px}
 button:focus-visible,input:focus-visible{outline:3px solid #188e9a!important;outline-offset:2px}
@@ -97,8 +100,8 @@ if page=='Overview':
     a,b,c,d=st.columns(4)
     a.metric('Assumed portfolio value',money(base));b.metric('Funds held',len(held))
     c.metric('Fund identity coverage',f'{resolved/base:.1%}')
-    d.metric('Weighted MER · known funds',pct(cost['mer']))
-    st.caption(f"MER coverage: {cost['coverage']:.1%} of portfolio value. Estimated annual fund expenses on covered holdings: ${cost['annual']:,.2f}. Underlying ETF MERs are not added again.")
+    d.metric('Weighted fund expenses',pct(cost['mer']))
+    st.caption(f"Fund expense coverage: {cost['coverage']:.1%} of portfolio value. Estimated annual fund expenses on covered holdings: ${cost['annual']:,.2f}. Underlying ETF MERs are not added again.")
     st.subheader('Your executive summary')
     countries=exposures(rows,funds,'Country');sectors=exposures(rows,funds,'Sector');stocks=underlying(rows,funds)
     real=countries[~countries.Exposure.str.contains('Unresolved|unclassified|Rounding|Cash',case=False)]
@@ -135,14 +138,57 @@ elif page=='Exposure & overlap':
 elif page=='My portfolio':
     st.subheader('Build your portfolio')
     st.caption('Edit current dollar amounts. Set a holding to zero to remove it from calculations. Ticker matches are confirmed in the sidebar.')
-    table=pd.DataFrame([{'Entered ticker':r['entered'],'Matched fund':r['ticker'] or 'Unresolved','Amount (CAD)':r['amount']} for r in rows])
+    table = pd.DataFrame([
+        {'Ticker': r['ticker'] or f"{r['entered']} (unresolved)",
+         'Amount (CAD)': r['amount'],
+         '% of portfolio': r['amount'] / base * 100 if base else 0.0}
+        for r in rows
+    ])
     with st.form('amounts'):
-        edited=st.data_editor(table,hide_index=True,width='stretch',disabled=['Entered ticker','Matched fund'],column_config={'Amount (CAD)':st.column_config.NumberColumn(min_value=0.,format='$%.2f')})
+        edited = st.data_editor(
+            table, hide_index=True, width='stretch',
+            height=min(560, 38 + 35 * len(rows)),
+            disabled=['Ticker', '% of portfolio'],
+            column_config={
+                'Amount (CAD)': st.column_config.NumberColumn(min_value=0.0, format='$%.2f'),
+                '% of portfolio': st.column_config.NumberColumn(format='%.2f%%'),
+            },
+        )
+        st.markdown(
+            '<div class="portfolio-total"><strong>Total invested</strong>'
+            f'<strong>${base:,.2f} CAD</strong>'
+            f'<strong>{100.0 if base else 0.0:.2f}%</strong></div>',
+            unsafe_allow_html=True,
+        )
         if st.form_submit_button('Update portfolio'):
             try:
-                st.session_state.portfolio=validate([dict(r,amount=float(edited.iloc[i]['Amount (CAD)'])) for i,r in enumerate(rows)],funds);st.rerun()
-            except (ValueError,TypeError) as e:st.error(str(e))
-    show_table(pd.DataFrame([{'Fund':r['ticker'] or r['entered'],'Portfolio (%)':r['amount']/base*100 if base else 0,'Amount (CAD)':r['amount']} for r in rows]))
+                updated = [dict(row, amount=amount)
+                           for row, amount in zip(rows, edited['Amount (CAD)'])]
+                st.session_state.portfolio = validate(updated, funds)
+                st.rerun()
+            except (ValueError, TypeError) as error:
+                st.error(str(error))
+    st.caption('Select Update portfolio to recalculate weights and the total after editing amounts.')
+    st.subheader('Add a fund')
+    existing = {r['ticker'] or SUGGESTIONS.get(r['entered'], r['entered']) for r in rows}
+    choices = sorted(funds.keys() - existing)
+    if choices:
+        with st.form('add_fund', clear_on_submit=True):
+            ticker = st.selectbox('ETF', choices, index=None, placeholder='Search by ticker or name',
+                                  format_func=lambda t: f"{t} · {funds[t]['name']}")
+            amount = st.number_input('Market value (CAD)', min_value=0.0, value=0.0, step=100.0)
+            st.caption('For USD listings, enter the CAD equivalent of the holding value.')
+            if st.form_submit_button('Add to portfolio'):
+                if ticker is None or amount <= 0:
+                    st.error('Choose a fund and enter a positive CAD amount.')
+                else:
+                    new_row = dict(entered=ticker, ticker=ticker, amount=amount)
+                    st.session_state.portfolio = validate([*rows, new_row], funds)
+                    st.rerun()
+    else:
+        st.caption('All available funds already have a row. Edit their amounts above.')
+    if any(r['entered'] == 'XULU' and r['ticker'] is None for r in rows):
+        st.caption('To use XVLU in the sample portfolio, confirm the XULU match in the sidebar.')
     with st.expander('Import an exported portfolio'):
         uploaded=st.file_uploader('Portfolio JSON',type=['json'])
         if st.button('Import portfolio',disabled=uploaded is None):
@@ -154,32 +200,41 @@ elif page=='My portfolio':
 
 elif page=='Performance':
     st.subheader('Published fund performance')
-    st.caption('Issuer NAV total returns in CAD, after fund expenses and with distributions reinvested. YTD and 1Y are cumulative; 3Y/5Y are annualized. Since inception is annualized for these funds and spans different start dates.')
+    st.caption('Issuer NAV total returns after fund expenses, with distributions reinvested. Currency and date are shown for each fund. YTD and 1Y are cumulative; 3Y/5Y are annualized. Since inception is annualized for these funds and spans different start dates.')
     data=[]
     for r in rows:
         f=funds.get(r['ticker'])
         data.append({'Ticker':r['ticker'] or r['entered'],'Fund name':f['name'] if f else 'Unresolved ticker',
                      **{('Since inception' if h=='SI' else h)+' (%)':f['returns'][h] if f else None for h in ['YTD','1Y','3Y','5Y','SI']},
-                     'Performance as of':f['performance_as_of'] if f else None,'MER (%)':f['mer'] if f else None,'Inception':f['inception'] if f else None})
+                     'Performance as of':f['performance_as_of'] if f else None,
+                     'Return currency':f.get('returns_currency', 'CAD') if f else None,'MER / expense ratio (%)':f['mer'] if f else None,'Inception':f['inception'] if f else None})
     show_table(pd.DataFrame(data),height=560)
     st.download_button('Download performance CSV',pd.DataFrame(data).to_csv(index=False),'fund_performance.csv','text/csv')
     st.info('These are fund returns, not your personal portfolio return. The $1,000 entries have no purchase dates or transaction history. A portfolio return or historical growth chart is not inferred from them.')
     horizon=st.selectbox('Compare a common published period',['3Y','5Y','1Y','YTD'])
-    chartdata=pd.DataFrame([{'Fund':x['Ticker'],'Return (%)':x[horizon+' (%)']} for x in data]).dropna()
-    st.altair_chart(alt.Chart(chartdata).mark_bar(color='#218b96',cornerRadiusEnd=4).encode(x=alt.X('Return (%):Q',title=horizon+' return (%)'),y=alt.Y('Fund:N',sort='-x'),tooltip=['Fund',alt.Tooltip('Return (%):Q',format='.2f')]).properties(height=400),width='stretch')
-    st.caption('Different mandates and risks make this a descriptive comparison, not a ranking of suitability. Missing history stays blank.')
+    currencies = sorted({x['Return currency'] for x in data if x['Return currency']})
+    currency = st.selectbox('Return currency for chart', currencies)
+    chartdata = pd.DataFrame(
+        [{'Fund': x['Ticker'], 'Return (%)': x[horizon+' (%)']}
+         for x in data if x['Return currency'] == currency],
+        columns=['Fund', 'Return (%)'],
+    ).dropna()
+    st.altair_chart(alt.Chart(chartdata).mark_bar(color='#218b96',cornerRadiusEnd=4).encode(x=alt.X('Return (%):Q',title=f'{horizon} return (%)' + (f' · {currency}' if currency else '')),y=alt.Y('Fund:N',sort='-x'),tooltip=['Fund',alt.Tooltip('Return (%):Q',format='.2f')]).properties(height=400),width='stretch')
+    st.caption('Funds can have different reporting dates. Check the table for each date before comparing. Missing history stays blank.')
 
 elif page=='Fund research':
     ticker=st.selectbox('Choose a fund',list(funds),format_func=lambda t:t+' · '+funds[t]['name'])
     f=funds[ticker];st.subheader(f['name']);st.write(f['objective'])
-    a,b,c=st.columns(3);a.metric('Published MER',pct(f['mer']));b.metric('Inception',f['inception']);c.metric('5Y annualized return',pct(f['returns']['5Y']))
-    st.caption('Returns as of '+f['performance_as_of']+' · CAD. MER is the published snapshot figure; no second layer of underlying MER is added.')
+    a,b,c=st.columns(3);a.metric('Published expense ratio' if ticker == 'ACWV' else 'Published MER',pct(f['mer']));b.metric('Inception',f['inception']);c.metric('5Y annualized return',pct(f['returns']['5Y']))
+    st.caption(f"Returns as of {f['performance_as_of']} · {f.get('returns_currency', 'CAD')}. Fund expenses use the issuer's published ratio.")
     st.link_button('Open official fund page ↗',f['url'])
     st.caption('The official page contains the governing fund documents, benchmark, hedging policy, distribution history, and additional risks.')
     st.subheader('Top 10 identified underlying securities')
     one=underlying([dict(ticker=ticker,amount=1000.,entered=ticker)],funds)
     show_table(one.head(10).rename(columns={'Portfolio (%)':'Fund (%)'}).drop(columns=['Amount (CAD)','Held through','Fund count','ISIN']))
     st.caption(f"{f['holdings_basis']} · holdings as of {f['holdings_as_of']}. Separate share classes shown separately.")
+    if ticker == 'FIE':
+        st.caption('Company holdings cover FIE’s direct positions. Securities inside its preferred-share and bond ETFs are unclassified in the company view.')
     l,r=st.columns(2)
     with l:bars(exposures([dict(ticker=ticker,amount=1000.)],funds,'Sector'),'Sectors')
     with r:bars(exposures([dict(ticker=ticker,amount=1000.)],funds,'Country'),'Countries')
@@ -190,7 +245,7 @@ elif page=='Compare a scenario':
     if st.button('Use current portfolio as comparison baseline'):
         st.session_state.baseline=copy.deepcopy(rows);st.rerun()
     baseline=st.session_state.baseline
-    proposal=st.data_editor(pd.DataFrame([{'Ticker':r['ticker'] or r['entered'],'Amount (CAD)':r['amount']} for r in rows]),disabled=['Ticker'],hide_index=True,width='stretch',key='scenario_editor',column_config={'Amount (CAD)':st.column_config.NumberColumn(min_value=0.,format='$%.2f')})
+    proposal=st.data_editor(pd.DataFrame([{'Ticker':r['ticker'] or r['entered'],'Amount (CAD)':r['amount']} for r in rows]),disabled=['Ticker'],hide_index=True,width='stretch',key='scenario_editor_'+','.join(r['entered'] for r in rows),column_config={'Amount (CAD)':st.column_config.NumberColumn(min_value=0.,format='$%.2f')})
     try:
         scenario=validate([dict(r,amount=float(proposal.iloc[i]['Amount (CAD)'])) for i,r in enumerate(rows)],funds)
         if total(scenario)==0:st.info('Enter at least one positive amount.');st.stop()
@@ -201,15 +256,15 @@ elif page=='Compare a scenario':
         changes=left.merge(right,on='Exposure',how='outer').fillna(0);changes['Change (pp)']=changes['Proposed (%)']-changes['Baseline (%)']
         show_table(changes.sort_values('Proposed (%)',ascending=False))
         sc=costs(scenario,funds)
-        st.write(f"Proposed weighted MER on known funds: {pct(sc['mer'])}. Fee coverage: {sc['coverage']:.1%}. Estimated annual fund expenses on covered holdings: ${sc['annual']:,.2f}.")
+        st.write(f"Proposed weighted fund expenses: {pct(sc['mer'])}. Fee coverage: {sc['coverage']:.1%}. Estimated annual fund expenses on covered holdings: ${sc['annual']:,.2f}.")
         if st.button('Apply proposed allocation to My portfolio'):
             st.session_state.portfolio=scenario;st.rerun()
     except (ValueError,TypeError) as e:st.error(str(e))
 
 with st.expander('Sources, effective dates & calculation notes'):
-    st.write('Source: BlackRock Canada/iShares product catalog, fund pages, and downloadable holdings. This is a dated issuer snapshot, not a live quote feed. Refresh retrieves new data for this session and retains prior fund data if a refresh fails.')
+    st.write('Source: BlackRock and iShares fund pages, product catalog, and downloadable holdings. This is a dated issuer snapshot, not a live quote feed. Refresh retrieves new data for this session and retains prior fund data if a refresh fails.')
     show_table(pd.DataFrame([{'Fund':t,'Returns as of':f['performance_as_of'],'Holdings as of':f['holdings_as_of'],'Retrieved UTC':f['retrieved_at'],'Sector date':f['breakdown_dates'].get('Sector'),'Country date':f['breakdown_dates'].get('Country'),'Official source':f['url']} for t,f in funds.items()]))
-    st.write('Exposure dollars = assumed current holding value × published fund exposure weight. Portfolio percentage = exposure dollars ÷ total entered portfolio value. Underlying securities are consolidated by ISIN, not company name; different share classes remain separate. Geography is not sales geography; quoted/reporting currency is not underlying currency risk. Detailed currency exposure requires additional data and is not inferred.')
-    st.write('MER cost estimate = current amount × published MER. Weighted MER is weighted only across holdings with available MERs, and coverage is stated. MERs are not added across ETF layers. Trading costs, investor commissions, spreads, foreign exchange costs, and applicable taxes are outside this estimate. Snapshot data may have different effective dates.')
+    st.write('Exposure dollars = assumed current holding value × published fund exposure weight. Portfolio percentage = exposure dollars ÷ total entered portfolio value. Underlying securities are consolidated by ISIN where available. ACWV holdings with no matching ISIN use their listing identifiers. Different share classes remain separate. Geography is not sales geography; quoted/reporting currency is not underlying currency risk. Detailed currency exposure requires additional data and is not inferred.')
+    st.write('Fund cost estimate = current CAD value × published MER (expense ratio for ACWV). Weighted MER is weighted only across holdings with available MERs, and coverage is stated. MERs are not added across ETF layers. Trading costs, investor commissions, spreads, foreign exchange costs, and applicable taxes are outside this estimate. Snapshot data may have different effective dates.')
     st.caption('This workspace describes the selected portfolio. It does not issue automatic buy/sell instructions or predict future returns. The original mutual-fund comparison tool is retained in legacy_app.py.')
 st.markdown('<div class="foot">casey&co · Portfolio Studio &nbsp; / &nbsp; Understand your investments. Make informed decisions.</div>',unsafe_allow_html=True)
