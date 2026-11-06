@@ -41,12 +41,11 @@ class PortfolioTests(unittest.TestCase):
             with self.assertRaises(ValueError):validate(rows,self.funds)
         for rows in [[],{},[None]]:
             with self.assertRaises(ValueError):validate(rows,self.funds)
-    def test_app_and_ticker_confirmation(self):
+    def test_app_with_confirmed_sample_tickers(self):
         at=AppTest.from_file('app.py',default_timeout=30).run()
         self.assertFalse(at.exception)
-        for control in at.selectbox:control.set_value(control.options[1])
-        next(b for b in at.button if b.label=='Apply ticker matches').click().run()
-        self.assertFalse(at.exception)
+        self.assertFalse(any('has unresolved tickers' in warning.value for warning in at.warning))
+        self.assertTrue(all(row['ticker'] for row in at.session_state['portfolio']))
         self.assertEqual(at.metric[2].value,'100.0%')
         for page in ['Exposure & overlap','My portfolio','Performance','Fund research','Compare a scenario']:
             at.radio[0].set_value(page).run()

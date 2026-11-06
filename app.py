@@ -47,6 +47,11 @@ if ('snapshot' not in st.session_state
         ]
 if 'portfolio' not in st.session_state:st.session_state.portfolio=seed()
 if 'baseline' not in st.session_state:st.session_state.baseline=seed()
+# Restore previously confirmed matches in the sample and older exports.
+for key in ('portfolio', 'baseline'):
+    for row in st.session_state[key]:
+        if row['ticker'] is None and row['entered'] in SUGGESTIONS:
+            row['ticker'] = SUGGESTIONS[row['entered']]
 if 'watchlist' not in st.session_state:st.session_state.watchlist=[]
 funds=st.session_state.snapshot['funds']
 rows=st.session_state.portfolio
@@ -77,17 +82,6 @@ with st.sidebar:
     st.caption('SAMPLE PORTFOLIO · CAD')
     st.write('Your $1,000-per-fund starting point.')
     st.caption('Amounts represent assumed current market values. They are not actual account balances.')
-    with st.expander('Confirm three ticker matches',expanded=any(r['ticker'] is None and r['amount']>0 for r in rows)):
-        st.caption('Confirm these suggestions before they contribute fund data.')
-        confirmed={}
-        for entered,suggested in SUGGESTIONS.items():
-            current=next((r['ticker'] for r in rows if r['entered']==entered),None)
-            confirmed[entered]=st.selectbox(entered,['Unresolved',suggested],index=1 if current==suggested else 0,key='map_'+entered)
-            st.caption(funds[suggested]['name'])
-        if st.button('Apply ticker matches',width='stretch'):
-            for r in rows + st.session_state.baseline:
-                if r['entered'] in confirmed:r['ticker']=None if confirmed[r['entered']]=='Unresolved' else confirmed[r['entered']]
-            st.rerun()
     if st.button('Refresh issuer data',width='stretch'):
         with st.spinner('Reading issuer publications…'):
             try:
@@ -108,7 +102,7 @@ st.markdown(f'<div class="hero"><div class="eyebrow">Your portfolio. A clearer p
 base=total(rows); held=[r for r in rows if r['amount']>0];resolved=sum(r['amount'] for r in held if r['ticker'] in funds)
 unknown=base-resolved;cost=costs(rows,funds)
 if st.session_state.get('refresh_errors'):st.warning('Some fund refreshes failed; previous snapshots retained: '+', '.join(st.session_state.refresh_errors))
-if unknown:st.warning(f'{money(unknown)} ({unknown/base:.1%}) has unresolved tickers. Confirm the suggested matches in the sidebar. That amount remains visible in exposure totals; its fees, returns, and holdings are unavailable.')
+if unknown:st.warning(f'{money(unknown)} ({unknown/base:.1%}) has unresolved tickers. Those amounts count toward your total. Their exposure, fees and returns are unavailable.')
 if base==0 and page not in ['My portfolio','Compare a scenario']:
     st.info('Add an amount to at least one fund in My portfolio.');st.stop()
 
@@ -153,7 +147,7 @@ elif page=='Exposure & overlap':
 
 elif page=='My portfolio':
     st.subheader('Build your portfolio')
-    st.caption('Edit current dollar amounts. Set a holding to zero to remove it from calculations. Ticker matches are confirmed in the sidebar.')
+    st.caption('Edit current dollar amounts. Set a holding to zero to remove it from calculations.')
     table = pd.DataFrame([
         {'Ticker': r['ticker'] or f"{r['entered']} (unresolved)",
          'Amount (CAD)': r['amount'],
@@ -202,8 +196,6 @@ elif page=='My portfolio':
                     st.rerun()
     else:
         st.caption('All available funds already have a row. Edit their amounts above.')
-    if any(r['entered'] == 'XULU' and r['ticker'] is None for r in rows):
-        st.caption('To use XVLU in the sample portfolio, confirm the XULU match in the sidebar.')
     with st.expander('Import an exported portfolio'):
         uploaded=st.file_uploader('Portfolio JSON',type=['json'])
         if st.button('Import portfolio',disabled=uploaded is None):

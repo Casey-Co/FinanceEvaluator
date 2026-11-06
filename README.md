@@ -23,7 +23,7 @@ streamlit run app.py
 
 ## Tickers
 
-The entered symbols CSP, XULU and CLUC are initially unresolved. Sidebar controls explicitly confirm suggested matches XSP, XVLU and CLU.C. Their $3,000 remains in the full portfolio denominator before confirmation. No silent ticker substitution occurs.
+The sample uses the previously confirmed matches XSP, XVLU and CLU.C for the original entries CSP, XULU and CLUC. The app also restores those matches when opening older exports. Any genuinely unresolved amounts still count toward the portfolio total.
 
 Supported researched funds: XSP, XQQ, XVLU, XUS, XMTM, CLU.C, XEQT, XWD, CEW, GGRO, XDNA, XEF, CIF and XDU. Further funds require verified catalog data; arbitrary unsupported tickers cannot be imported.
 
@@ -49,4 +49,4 @@ Changes are isolated to the current Streamlit session. Export your allocation be
 python -m unittest test_portfolio.py
 ```
 
-Tests check conservation of portfolio value with unresolved entries, scale invariance, top-level fee treatment, underlying overlap, missing history, invalid inputs, ticker confirmation, all six screens, and recovery from a zero-value portfolio. Browser visual QA depends on the host preview environment.
+Tests check conservation of portfolio value with unresolved entries, scale invariance, top-level fee treatment, underlying overlap, missing history, invalid inputs, confirmed sample tickers, all six screens, and recovery from a zero-value portfolio. Browser visual QA depends on the host preview environment.
