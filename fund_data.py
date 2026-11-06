@@ -2,20 +2,18 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-import csv
 import json
 import gzip
 import re
-from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from lxml import html
 
 CATALOG_URL = 'https://www.blackrock.com/ca/investors/en/products/product-list'
 TICKERS = (
     'XSP XQQ XVLU XUS XMTM CLU.C XEQT XWD CEW GGRO XDNA XEF CIF XDU '
-    'XFN XDV XCV FIE XST CUD XMW XEC.U XEI XSEM CWO XEC XEG XUSR'
+    'XFN XDV XCV FIE XST CUD XMW XEI XSEM CWO XEC XEG XUSR'
 ).split()
-ACWV_URL = 'https://www.ishares.com/us/products/239605/ishares-msci-global-min-vol-factor-etf'
+RETIRED_TICKERS = {'XEC.U', 'ACWV'}
 ORIGINAL = 'CSP XQQ XULU XUS XMTM CLUC XEQT XWD CEW GGRO XDNA XEF CIF XDU'.split()
 SUGGESTIONS = {'CSP':'XSP', 'XULU':'XVLU', 'CLUC':'CLU.C'}
 SNAPSHOT = Path(__file__).with_name('issuer_snapshot.json.gz')
@@ -44,7 +42,7 @@ def catalog_from_html(raw):
             returns=dict(zip(['YTD','1Y','3Y','5Y','SI'],map(number,vals[2:7]))),
             performance_as_of=vals[7], mer=number(vals[8]), inception=vals[9],
             url='https://www.blackrock.com'+cells[0].xpath('.//a/@href')[0],
-            returns_currency='USD' if vals[0].endswith('.U') else 'CAD')
+            returns_currency='CAD')
     if len(output) != len(TICKERS):
         missing = ', '.join(sorted(set(TICKERS) - output.keys()))
         raise ValueError(f'Issuer catalog is missing {missing}; keeping previous snapshot.')
@@ -120,70 +118,6 @@ def parse_profile(fund, raw, loader=download):
     result['retrieved_at']=datetime.now(timezone.utc).isoformat(timespec='seconds')
     return result
 
-def holding_identity(ticker, name, country):
-    return tuple(value.strip().casefold() for value in (ticker, name, country))
-
-
-def parse_acwv(raw, reference_holdings, loader=download):
-    """Read US issuer data and use XMW holdings to resolve shared security IDs."""
-    page = html.fromstring(raw)
-    components = [json.loads(value) for value in page.xpath('//@componentprops')]
-    performance = next(c for c in components if c.get('componentId') == 'performance'
-                       and 'selectedView' in c)
-    tables = performance['containersByNameMap']['returns']['subContainersByNameMap']
-    average = tables['average']['dataPointsByNameMap']
-    cumulative = tables['cumulative']['dataPointsByNameMap']
-    avg_row = average['returnTypes']['formattedValue'].index('Total Return (%)')
-    cum_row = cumulative['returnTypes']['formattedValue'].index('Total Return (%)')
-    as_of = average['asOfDate']['formattedValue']
-    returns = {
-        period: number(average[field]['formattedValue'][avg_row])
-        for period, field in [('1Y', 'oneYearAnnualized'), ('3Y', 'threeYearAnnualized'),
-                              ('5Y', 'fiveYearAnnualized'), ('SI', 'sinceInceptionAnnualized')]
-    }
-    returns['YTD'] = (number(cumulative['yearToDate']['formattedValue'][cum_row])
-                      if cumulative['asOfDate']['formattedValue'] == as_of else None)
-    facts = next(c['dataPoints'] for c in components if c.get('componentId') == 'keyFundFacts')
-    fee = next(c['feeDataPoints']['expr']['formattedValue'] for c in components
-               if c.get('componentId') == 'feeTable')
-    objective = next(c['content']['fund-description'][0]['text'] for c in components
-                     if 'fund-description' in c.get('content', {}))
-    endpoint = urljoin(ACWV_URL, page.xpath('//a[@data-id="holdings-csv-link"]/@href')[0])
-    lines = loader(endpoint).splitlines()
-    rows = list(csv.reader(lines))
-    holdings_as_of = next(row[1] for row in rows if row and row[0] == 'Fund Holdings as of')
-    start = next(i for i, row in enumerate(rows) if row and row[0] == 'Ticker')
-    ids = {}
-    for h in reference_holdings:
-        if h['isin'] not in ('', '-'):
-            key = holding_identity(h['ticker'], h['name'], h['country'])
-            ids.setdefault(key, set()).add(h['isin'])
-    holdings = []
-    asset_mix = {}
-    for row in csv.DictReader(lines[start:]):
-        weight = number(row.get('Weight (%)'))
-        if weight is None:
-            continue
-        ticker, name, country = row['Ticker'], row['Name'], row['Location']
-        matches = ids.get(holding_identity(ticker, name, country), set())
-        holdings.append(dict(ticker=ticker, name=name, country=country,
-                             sector=row['Sector'], exchange=row['Exchange'], weight=weight,
-                             isin=next(iter(matches)) if len(matches) == 1 else '',
-                             asset_class=row['Asset Class']))
-        label = row['Asset Class']
-        asset_mix[label] = asset_mix.get(label, 0) + weight
-    if not holdings:
-        raise ValueError('No usable holdings for ACWV')
-    return dict(ticker='ACWV', name='iShares MSCI Global Min Vol Factor ETF', objective=objective,
-                returns=returns, performance_as_of=as_of, returns_currency='USD',
-                mer=number(fee.rstrip('%')), inception=facts['launchDate']['formattedValue'],
-                asset_class=facts['assetClass']['formattedValue'], url=ACWV_URL,
-                holdings=holdings, holdings_url=endpoint, holdings_as_of=holdings_as_of,
-                holdings_basis='Direct holdings; shared security IDs matched to issuer XMW holdings',
-                breakdowns={'Asset class': asset_mix}, breakdown_dates={'Asset class': holdings_as_of},
-                retrieved_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
-
-
 def refresh_snapshot(previous):
     catalog=catalog_from_html(download(CATALOG_URL))
     errors={}
@@ -195,12 +129,6 @@ def refresh_snapshot(previous):
         for ticker,data,error in pool.map(get,TICKERS):
             if data:funds[ticker]=data
             if error:errors[ticker]=error
-    try:
-        funds['ACWV'] = parse_acwv(download(ACWV_URL), funds['XMW']['holdings'])
-    except Exception as error:
-        if 'ACWV' in previous['funds']:
-            funds['ACWV'] = previous['funds']['ACWV']
-        errors['ACWV'] = f'{type(error).__name__}: {error}'
     return dict(funds=funds, retrieved_at=datetime.now(timezone.utc).isoformat(timespec='seconds')), errors
 
 def load_snapshot():
